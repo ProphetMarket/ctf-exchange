@@ -47,4 +47,15 @@ contract ERC1271SignatureTest is BaseExchangeTest {
         vm.expectRevert(InvalidSignature.selector);
         exchange.validateOrderSignature(orderHash, order);
     }
+
+    function test_validate1271Signature_revert_invalidSignerMaker() public {
+        Order memory order = _createOrder(address(contractWallet), yes, 50_000_000, 100_000_000, Side.BUY);
+        order.signatureType = SignatureType.POLY_1271;
+        // signer == carla, maker == contractWallet
+        order.signer = carla;
+        bytes32 orderHash = exchange.hashOrder(order);
+        order.signature = _signMessage(carlaPK, orderHash);
+        vm.expectRevert(InvalidSignature.selector);
+        exchange.validateOrderSignature(orderHash, order);
+    }
 }
