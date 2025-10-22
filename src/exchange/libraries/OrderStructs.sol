@@ -36,27 +36,26 @@ struct Order {
     bytes signature;
 }
 
-enum SignatureType
-// 0: ECDSA EIP712 signatures signed by EOAs
-{
+enum SignatureType {
+    // 0: ECDSA EIP712 signatures signed by EOAs
     EOA,
     // 1: EIP712 signatures signed by EOAs that own Polymarket Proxy wallets
     POLY_PROXY,
     // 2: EIP712 signatures signed by EOAs that own Polymarket Gnosis safes
-    POLY_GNOSIS_SAFE
+    POLY_GNOSIS_SAFE,
+    // 3: EIP1271 signatures signed by smart contracts. To be used by smart contract wallets or vaults
+    POLY_1271
 }
 
-enum Side
-// 0: buy
-{
+enum Side {
+    // 0: buy
     BUY,
     // 1: sell
     SELL
 }
 
-enum MatchType
-// 0: buy vs sell
-{
+enum MatchType {
+    // 0: buy vs sell
     COMPLEMENTARY,
     // 1: both buys
     MINT,

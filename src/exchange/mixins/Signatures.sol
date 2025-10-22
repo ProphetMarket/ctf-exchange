@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.10;
 
-import { IERC1271 } from "openzeppelin-contracts/interfaces/IERC1271.sol";
+import { SignatureCheckerLib } from "solady/utils/SignatureCheckerLib.sol";
 import { ECDSA } from "openzeppelin-contracts/utils/cryptography/ECDSA.sol";
 
 import { SignatureType, Order } from "../libraries/OrderStructs.sol";
@@ -28,7 +28,9 @@ abstract contract Signatures is ISignatures, PolyFactoryHelper {
     /// @param signer           - Address of the signer
     /// @param associated       - Address associated with the signer.
     ///                           For signature type EOA, this MUST be the same as the signer address.
-    ///                           For signature types POLY_PROXY and POLY_GNOSIS_SAFE, this is the address of the proxy or the safe
+    ///                           For signature types POLY_PROXY and POLY_GNOSIS_SAFE, this is the address of the proxy
+    ///                           or the safe
+    ///                           For signature type POLY_1271, this is the address of the contract
     /// @param structHash       - The hash of the struct being verified
     /// @param signature        - The signature to be verified
     /// @param signatureType    - The signature type to be verified
@@ -40,9 +42,14 @@ abstract contract Signatures is ISignatures, PolyFactoryHelper {
         SignatureType signatureType
     ) internal view returns (bool) {
         if (signatureType == SignatureType.EOA) {
+            // EOA
             return verifyEOASignature(signer, associated, structHash, signature);
         } else if (signatureType == SignatureType.POLY_GNOSIS_SAFE) {
+            // POLY_GNOSIS_SAFE
             return verifyPolySafeSignature(signer, associated, structHash, signature);
+        } else if (signatureType == SignatureType.POLY_1271) {
+            // POLY_1271
+            return verifyPoly1271Signature(signer, associated, structHash, signature);
         } else {
             // POLY_PROXY
             return verifyPolyProxySignature(signer, associated, structHash, signature);
@@ -108,5 +115,19 @@ abstract contract Signatures is ISignatures, PolyFactoryHelper {
         returns (bool)
     {
         return verifyECDSASignature(signer, hash, signature) && getSafeAddress(signer) == safeAddress;
+    }
+
+    /// @notice Verifies a signature signed by a smart contract
+    /// @param signer           - Address of the 1271 smart contract
+    /// @param maker            - Address of the 1271 smart contract
+    /// @param hash             - Hash of the struct being verified
+    /// @param signature        - Signature to be verified
+    function verifyPoly1271Signature(address signer, address maker, bytes32 hash, bytes memory signature)
+        internal
+        view
+        returns (bool)
+    {
+        return (signer == maker) && maker.code.length > 0
+            && SignatureCheckerLib.isValidSignatureNow(maker, hash, signature);
     }
 }

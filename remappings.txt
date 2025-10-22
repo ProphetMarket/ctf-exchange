@@ -2,6 +2,7 @@ openzeppelin/=lib/openzeppelin-contracts/contracts/
 openzeppelin-contracts/=lib/openzeppelin-contracts/contracts/
 
 solmate/=lib/solmate/src/
+solady/=lib/solady/src/
 
 common/=src/common/
 creator/=src/creator/

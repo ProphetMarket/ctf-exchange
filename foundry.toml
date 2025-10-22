@@ -15,4 +15,5 @@ runs = 10_000
 line_length = 120
 tab_width = 4
 bracket_spacing = true
+wrap_comments = true
 single_line_statement_blocks = "single"
