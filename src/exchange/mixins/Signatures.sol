@@ -29,6 +29,7 @@ abstract contract Signatures is ISignatures, PolyFactoryHelper {
     /// @param associated       - Address associated with the signer.
     ///                           For signature type EOA, this MUST be the same as the signer address.
     ///                           For signature types POLY_PROXY and POLY_GNOSIS_SAFE, this is the address of the proxy or the safe
+    //                            For signature type POLY_1271, this is the address of the contract address
     /// @param structHash       - The hash of the struct being verified
     /// @param signature        - The signature to be verified
     /// @param signatureType    - The signature type to be verified
@@ -40,10 +41,13 @@ abstract contract Signatures is ISignatures, PolyFactoryHelper {
         SignatureType signatureType
     ) internal view returns (bool) {
         if (signatureType == SignatureType.EOA) {
+            // EOA
             return verifyEOASignature(signer, associated, structHash, signature);
         } else if (signatureType == SignatureType.POLY_GNOSIS_SAFE) {
+            // POLY_GNOSIS_SAFE
             return verifyPolySafeSignature(signer, associated, structHash, signature);
         } else if (signatureType == SignatureType.POLY_1271) {
+            // POLY_1271
             return verifyPoly1271Signature(signer, structHash, signature);
         } else {
             // POLY_PROXY
@@ -116,13 +120,17 @@ abstract contract Signatures is ISignatures, PolyFactoryHelper {
     /// @param contractAddress  - Address of the smart contract
     /// @param hash             - Hash of the struct being verified
     /// @param signature        - Signature to be verified
-    function verifyPoly1271Signature(address contractAddress, bytes32 hash, bytes memory signature) internal view returns (bool) {
-        (bool success, bytes memory result) = contractAddress.staticcall(
-            abi.encodeWithSelector(IERC1271.isValidSignature.selector, hash, signature)
-        );
+    function verifyPoly1271Signature(address contractAddress, bytes32 hash, bytes memory signature)
+        internal
+        view
+        returns (bool)
+    {
+        (bool success, bytes memory result) =
+            contractAddress.staticcall(abi.encodeWithSelector(IERC1271.isValidSignature.selector, hash, signature));
 
-        return (success &&
-            result.length >= 32 &&
-            abi.decode(result, (bytes32)) == bytes32(IERC1271.isValidSignature.selector));
+        return (
+            success && result.length >= 32
+                && abi.decode(result, (bytes32)) == bytes32(IERC1271.isValidSignature.selector)
+        );
     }
 }

@@ -2,7 +2,10 @@
 pragma solidity <0.9.0;
 
 import { TestHelper } from "dev/TestHelper.sol";
+
 import { USDC } from "dev/mocks/USDC.sol";
+import { ERC1271Mock } from "dev/mocks/ERC1271Mock.sol";
+
 import { Deployer } from "dev/util/Deployer.sol";
 
 import { IERC20 } from "openzeppelin-contracts/token/ERC20/IERC20.sol";
@@ -19,7 +22,7 @@ import { ISignaturesEE } from "exchange/interfaces/ISignatures.sol";
 import { IConditionalTokens } from "exchange/interfaces/IConditionalTokens.sol";
 
 import { CalculatorHelper } from "exchange/libraries/CalculatorHelper.sol";
-import { Order, Side, MatchType, OrderStatus, SignatureType } from "exchange/libraries/OrderStructs.sol";
+import { Order, Side, SignatureType } from "exchange/libraries/OrderStructs.sol";
 
 contract BaseExchangeTest is TestHelper, IAuthEE, IFeesEE, IRegistryEE, IPausableEE, ITradingEE, ISignaturesEE {
     mapping(address => mapping(address => mapping(uint256 => uint256))) private _checkpoints1155;
@@ -38,6 +41,8 @@ contract BaseExchangeTest is TestHelper, IAuthEE, IFeesEE, IRegistryEE, IPausabl
     uint256 internal carlaPK = 0xCA414;
     address public bob;
     address public carla;
+
+    ERC1271Mock public contractWallet;
 
     // ERC20 transfer event
     event Transfer(address indexed from, address indexed to, uint256 value);
@@ -61,6 +66,9 @@ contract BaseExchangeTest is TestHelper, IAuthEE, IFeesEE, IRegistryEE, IPausabl
         conditionId = _prepareCondition(admin, questionID);
         yes = _getPositionId(2);
         no = _getPositionId(1);
+
+        // Deploy a 1271 contract and set carla as the signer
+        contractWallet = new ERC1271Mock(carla);
 
         vm.startPrank(admin);
         exchange = new CTFExchange(address(usdc), address(ctf), address(0), address(0));
@@ -101,6 +109,18 @@ contract BaseExchangeTest is TestHelper, IAuthEE, IFeesEE, IRegistryEE, IPausabl
         address maker = vm.addr(pk);
         Order memory order = _createOrder(maker, tokenId, makerAmount, takerAmount, side);
         order.signature = _signMessage(pk, exchange.hashOrder(order));
+        return order;
+    }
+
+    function _createAndSign1271Order(uint256 signerPk, address wallet, uint256 tokenId, uint256 makerAmount, uint256 takerAmount, Side side) 
+        internal
+        returns (Order memory)
+    {
+        Order memory order = _createOrder(wallet, tokenId, makerAmount, takerAmount, side);
+        order.signer = wallet;
+        order.maker = wallet;
+        order.signatureType = SignatureType.POLY_1271;
+        order.signature = _signMessage(signerPk, exchange.hashOrder(order));
         return order;
     }
 
