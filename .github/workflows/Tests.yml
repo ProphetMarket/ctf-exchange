@@ -1,20 +1,40 @@
-on: [push]
+name: CI
 
-name: test
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+env:
+  FOUNDRY_PROFILE: ci
 
 jobs:
   check:
-    name: Tests
+    name: Foundry project
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
         with:
           submodules: recursive
 
-      - name: Install Foundry
+      - name: Install
         uses: foundry-rs/foundry-toolchain@v1
-        with:
-          version: nightly
 
-      - name: Run tests
-        run: forge test -vvv
+      - name: version
+        run: |
+          forge --version
+
+      - name: fmt
+        run: |
+          forge fmt --check
+        id: fmt
+
+      - name: Build
+        run: |
+          forge build --sizes
+        id: build
+
+      - name: Test
+        run: |
+          forge test -vvv
+        id: test
