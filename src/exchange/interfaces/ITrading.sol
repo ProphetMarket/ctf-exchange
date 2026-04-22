@@ -16,6 +16,7 @@ interface ITradingEE {
     error InvalidAmount();
     error RoundsToZero();
     error NothingToSweep();
+    error ArrayLengthMismatch();
 
     /// @notice Emitted when an order is cancelled
     event OrderCancelled(bytes32 indexed orderHash);

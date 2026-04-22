@@ -117,6 +117,7 @@ abstract contract Trading is IFees, ITrading, IHashing, IRegistry, ISignatures, 
     /// @param fillAmounts  - The amounts to be filled, always in terms of the maker amount
     /// @param to           - The address to receive assets from filling the order
     function _fillOrders(Order[] memory orders, uint256[] memory fillAmounts, address to) internal {
+        if (orders.length != fillAmounts.length) revert ArrayLengthMismatch();
         uint256 length = orders.length;
         uint256 i = 0;
         for (; i < length;) {
@@ -194,6 +195,7 @@ abstract contract Trading is IFees, ITrading, IHashing, IRegistry, ISignatures, 
     function _fillMakerOrders(Order memory takerOrder, Order[] memory makerOrders, uint256[] memory makerFillAmounts)
         internal
     {
+        if (makerOrders.length != makerFillAmounts.length) revert ArrayLengthMismatch();
         uint256 length = makerOrders.length;
         uint256 i = 0;
         for (; i < length;) {
