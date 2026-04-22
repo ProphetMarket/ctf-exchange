@@ -8,10 +8,11 @@ import { IHashing } from "../interfaces/IHashing.sol";
 import { Order, ORDER_TYPEHASH } from "../libraries/OrderStructs.sol";
 
 abstract contract Hashing is EIP712, IHashing {
-    bytes32 public immutable domainSeparator;
+    constructor(string memory name, string memory version) EIP712(name, version) { }
 
-    constructor(string memory name, string memory version) EIP712(name, version) {
-        domainSeparator = _domainSeparatorV4();
+    /// @notice Returns the current domain separator, recomputed on chain forks
+    function domainSeparator() external view returns (bytes32) {
+        return _domainSeparatorV4();
     }
 
     /// @notice Computes the hash for an order
