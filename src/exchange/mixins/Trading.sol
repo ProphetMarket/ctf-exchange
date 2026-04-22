@@ -63,6 +63,10 @@ abstract contract Trading is IFees, ITrading, IHashing, IRegistry, ISignatures, 
     }
 
     function _validateOrder(bytes32 orderHash, Order memory order) internal view {
+        // Reject zero-amount orders — they quote a price of zero or infinity,
+        // which lets an operator drain the maker for free.
+        if (order.makerAmount == 0 || order.takerAmount == 0) revert InvalidAmount();
+
         // Validate order expiration
         if (order.expiration > 0 && order.expiration < block.timestamp) revert OrderExpired();
 

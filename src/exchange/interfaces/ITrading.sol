@@ -13,6 +13,7 @@ interface ITradingEE {
     error NotCrossing();
     error TooLittleTokensReceived();
     error MismatchedTokenIds();
+    error InvalidAmount();
 
     /// @notice Emitted when an order is cancelled
     event OrderCancelled(bytes32 indexed orderHash);

@@ -648,8 +648,6 @@ contract MatchOrdersTest is BaseExchangeTest {
         // Create a non-standard buy order with zero taker amount
         Order memory buy = _createAndSignOrder(bobPK, yes, 50_000_000, 0, Side.BUY);
 
-        // Any valid sell order will be able to drain the buy order
-        // Init a sell order priced absurdly high
         Order memory sell = _createAndSignOrder(carlaPK, yes, 1, 50_000_000, Side.SELL);
 
         Order[] memory makerOrders = new Order[](1);
@@ -660,10 +658,51 @@ contract MatchOrdersTest is BaseExchangeTest {
 
         uint256 takerOrderFillAmount = 50_000_000;
 
-        vm.expectEmit(true, true, true, true);
-        emit OrdersMatched(exchange.hashOrder(buy), bob, 0, yes, 50_000_000, 1);
+        // M-01 fix: zero taker amount orders are now rejected during validation.
+        // Previously, this would let any sell order drain the buy order for free.
+        vm.expectRevert(InvalidAmount.selector);
+        vm.prank(admin);
+        exchange.matchOrders(buy, makerOrders, takerOrderFillAmount, fillAmounts);
+    }
 
-        // The orders are successfully matched
+    function testMatchZeroMakerAmountOnMakerOrder() public {
+        // Taker order is valid
+        Order memory buy = _createAndSignOrder(bobPK, yes, 50_000_000, 100_000_000, Side.BUY);
+
+        // Maker order has zero makerAmount
+        Order memory sell = _createAndSignOrder(carlaPK, yes, 0, 50_000_000, Side.SELL);
+
+        Order[] memory makerOrders = new Order[](1);
+        makerOrders[0] = sell;
+
+        uint256[] memory fillAmounts = new uint256[](1);
+        fillAmounts[0] = 0;
+
+        uint256 takerOrderFillAmount = 50_000_000;
+
+        // Maker order with zero makerAmount is also rejected
+        vm.expectRevert(InvalidAmount.selector);
+        vm.prank(admin);
+        exchange.matchOrders(buy, makerOrders, takerOrderFillAmount, fillAmounts);
+    }
+
+    function testMatchZeroTakerAmountOnMakerOrder() public {
+        // Taker order is valid
+        Order memory buy = _createAndSignOrder(bobPK, yes, 50_000_000, 100_000_000, Side.BUY);
+
+        // Maker order has zero takerAmount — would give away tokens for free
+        Order memory sell = _createAndSignOrder(carlaPK, yes, 100_000_000, 0, Side.SELL);
+
+        Order[] memory makerOrders = new Order[](1);
+        makerOrders[0] = sell;
+
+        uint256[] memory fillAmounts = new uint256[](1);
+        fillAmounts[0] = 100_000_000;
+
+        uint256 takerOrderFillAmount = 50_000_000;
+
+        // Maker order with zero takerAmount is rejected
+        vm.expectRevert(InvalidAmount.selector);
         vm.prank(admin);
         exchange.matchOrders(buy, makerOrders, takerOrderFillAmount, fillAmounts);
     }

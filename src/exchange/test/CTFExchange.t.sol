@@ -195,6 +195,24 @@ contract CTFExchangeTest is BaseExchangeTest {
         exchange.fillOrder(order, 50_000_000);
     }
 
+    function testValidateZeroMakerAmount() public {
+        Order memory order = _createAndSignOrder(bobPK, yes, 0, 100_000_000, Side.BUY);
+        vm.expectRevert(InvalidAmount.selector);
+        exchange.validateOrder(order);
+    }
+
+    function testValidateZeroTakerAmount() public {
+        Order memory order = _createAndSignOrder(bobPK, yes, 50_000_000, 0, Side.BUY);
+        vm.expectRevert(InvalidAmount.selector);
+        exchange.validateOrder(order);
+    }
+
+    function testValidateZeroBothAmounts() public {
+        Order memory order = _createAndSignOrder(bobPK, yes, 0, 0, Side.BUY);
+        vm.expectRevert(InvalidAmount.selector);
+        exchange.validateOrder(order);
+    }
+
     function testValidateFeeTooHigh() public {
         Order memory order = _createAndSignOrderWithFee(
             bobPK,
@@ -410,8 +428,8 @@ contract CTFExchangeTest is BaseExchangeTest {
         // Create a non-standard order with 0 maker amount
         Order memory order = _createAndSignOrder(bobPK, yes, 0, 100_000_000, Side.BUY);
 
-        // Reverts since the order does not allocate any tokens to be sold, i.e zero maker amount
-        vm.expectRevert(MakingGtRemaining.selector);
+        // Reverts because zero-amount orders are rejected during validation
+        vm.expectRevert(InvalidAmount.selector);
         vm.prank(carla);
         exchange.fillOrder(order, 50_000_000);
     }
@@ -423,19 +441,11 @@ contract CTFExchangeTest is BaseExchangeTest {
         // Create a non-standard order with 0 taker amount
         Order memory order = _createAndSignOrder(bobPK, yes, 50_000_000, 0, Side.BUY);
 
-        // As such, the order can be successfully filled with *nothing*.
-        // Note: it is up to the user to provide sensible maker and taker amounts
-        // See the below CTF ERC1155 transfer event:
-        // Transferring 0 YES tokens from carla in return for all of the USDC in the order
-        vm.expectEmit(true, true, true, true);
-        emit TransferSingle(address(exchange), carla, bob, yes, 0);
-
-        vm.expectEmit(true, true, true, true);
-        emit OrderFilled(exchange.hashOrder(order), bob, carla, 0, yes, 50_000_000, 0, 0);
-
-        uint256 fillAmount = 50_000_000;
+        // M-01 fix: zero taker amount orders are now rejected.
+        // Previously, this would let the maker give away tokens for free.
+        vm.expectRevert(InvalidAmount.selector);
         vm.prank(carla);
-        exchange.fillOrder(order, fillAmount);
+        exchange.fillOrder(order, 50_000_000);
     }
 
     function testFillOrderMaliciousOperator() public {
