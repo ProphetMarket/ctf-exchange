@@ -15,6 +15,9 @@ abstract contract Auth is IAuth {
     /// @dev The number of active admins
     uint256 public adminCount;
 
+    /// @dev The address proposed as a new admin via two-step transfer
+    address public pendingAdmin;
+
     modifier onlyAdmin() {
         if (admins[msg.sender] != 1) revert NotAdmin();
         _;
@@ -92,5 +95,23 @@ abstract contract Auth is IAuth {
     function renounceOperatorRole() external onlyOperator {
         operators[msg.sender] = 0;
         emit RemovedOperator(msg.sender, msg.sender);
+    }
+
+    /// @notice Proposes a new admin via two-step transfer (L-05)
+    /// The proposed address must call acceptAdmin() to complete the transfer.
+    /// @param newAdmin - The address to propose as admin
+    function transferAdmin(address newAdmin) external onlyAdmin {
+        if (newAdmin == address(0)) revert ZeroAddress();
+        pendingAdmin = newAdmin;
+        emit AdminTransferProposed(msg.sender, newAdmin);
+    }
+
+    /// @notice Accepts a pending admin role proposed via transferAdmin
+    function acceptAdmin() external {
+        if (msg.sender != pendingAdmin) revert NotPendingAdmin();
+        admins[msg.sender] = 1;
+        adminCount++;
+        pendingAdmin = address(0);
+        emit NewAdmin(msg.sender, msg.sender);
     }
 }

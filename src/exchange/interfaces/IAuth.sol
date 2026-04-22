@@ -5,6 +5,8 @@ interface IAuthEE {
     error NotAdmin();
     error NotOperator();
     error CannotRemoveLastAdmin();
+    error NotPendingAdmin();
+    error ZeroAddress();
 
     /// @notice Emitted when a new admin is added
     event NewAdmin(address indexed newAdminAddress, address indexed admin);
@@ -17,6 +19,9 @@ interface IAuthEE {
 
     /// @notice Emitted when an operator is removed
     event RemovedOperator(address indexed removedOperator, address indexed admin);
+
+    /// @notice Emitted when an admin transfer is proposed
+    event AdminTransferProposed(address indexed currentAdmin, address indexed proposedAdmin);
 }
 
 interface IAuth is IAuthEE {
@@ -37,4 +42,10 @@ interface IAuth is IAuthEE {
     function renounceOperatorRole() external;
 
     function adminCount() external view returns (uint256);
+
+    function transferAdmin(address) external;
+
+    function acceptAdmin() external;
+
+    function pendingAdmin() external view returns (address);
 }
