@@ -60,11 +60,13 @@ abstract contract PolyFactoryHelper {
     }
 
     function _setProxyFactory(address _proxyFactory) internal {
+        require(_proxyFactory != address(0), "zero address");
         emit ProxyFactoryUpdated(proxyFactory, _proxyFactory);
         proxyFactory = _proxyFactory;
     }
 
     function _setSafeFactory(address _safeFactory) internal {
+        require(_safeFactory != address(0), "zero address");
         emit SafeFactoryUpdated(safeFactory, _safeFactory);
         safeFactory = _safeFactory;
     }
