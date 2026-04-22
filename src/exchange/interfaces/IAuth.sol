@@ -4,6 +4,7 @@ pragma solidity <0.9.0;
 interface IAuthEE {
     error NotAdmin();
     error NotOperator();
+    error CannotRemoveLastAdmin();
 
     /// @notice Emitted when a new admin is added
     event NewAdmin(address indexed newAdminAddress, address indexed admin);
@@ -34,4 +35,6 @@ interface IAuth is IAuthEE {
     function renounceAdminRole() external;
 
     function renounceOperatorRole() external;
+
+    function adminCount() external view returns (uint256);
 }

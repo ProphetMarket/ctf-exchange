@@ -54,6 +54,10 @@ contract CTFExchangeTest is BaseExchangeTest {
         assertTrue(exchange.isAdmin(admin));
         assertTrue(exchange.isOperator(admin));
 
+        // Add a second admin so admin can renounce
+        vm.prank(admin);
+        exchange.addAdmin(henry);
+
         // Successfully renounces the admin role
         vm.prank(admin);
         exchange.renounceAdminRole();

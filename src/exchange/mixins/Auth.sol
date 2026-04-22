@@ -12,6 +12,9 @@ abstract contract Auth is IAuth {
     /// @dev The set of addresses authorized as Operators
     mapping(address => uint256) public operators;
 
+    /// @dev The number of active admins
+    uint256 public adminCount;
+
     modifier onlyAdmin() {
         if (admins[msg.sender] != 1) revert NotAdmin();
         _;
@@ -24,6 +27,7 @@ abstract contract Auth is IAuth {
 
     constructor() {
         admins[msg.sender] = 1;
+        adminCount = 1;
         operators[msg.sender] = 1;
     }
 
@@ -39,7 +43,10 @@ abstract contract Auth is IAuth {
     /// Can only be called by a current admin
     /// @param admin_ - The new admin
     function addAdmin(address admin_) external onlyAdmin {
-        admins[admin_] = 1;
+        if (admins[admin_] != 1) {
+            admins[admin_] = 1;
+            adminCount++;
+        }
         emit NewAdmin(admin_, msg.sender);
     }
 
@@ -55,7 +62,11 @@ abstract contract Auth is IAuth {
     /// Can only be called by a current admin
     /// @param admin - The admin to be removed
     function removeAdmin(address admin) external onlyAdmin {
-        admins[admin] = 0;
+        if (admins[admin] == 1) {
+            if (adminCount <= 1) revert CannotRemoveLastAdmin();
+            admins[admin] = 0;
+            adminCount--;
+        }
         emit RemovedAdmin(admin, msg.sender);
     }
 
@@ -70,7 +81,9 @@ abstract contract Auth is IAuth {
     /// @notice Removes the admin role for the caller
     /// Can only be called by an existing admin
     function renounceAdminRole() external onlyAdmin {
+        if (adminCount <= 1) revert CannotRemoveLastAdmin();
         admins[msg.sender] = 0;
+        adminCount--;
         emit RemovedAdmin(msg.sender, msg.sender);
     }
 
