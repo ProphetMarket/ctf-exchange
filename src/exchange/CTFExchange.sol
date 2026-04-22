@@ -15,6 +15,7 @@ import { AssetOperations } from "./mixins/AssetOperations.sol";
 import { BaseExchange } from "./BaseExchange.sol";
 
 import { Order } from "./libraries/OrderStructs.sol";
+import { IERC1155 } from "openzeppelin-contracts/token/ERC1155/IERC1155.sol";
 
 /// @title CTF Exchange
 /// @notice Implements logic for trading CTF assets
@@ -110,5 +111,37 @@ contract CTFExchange is
     /// @param conditionId  - The CTF conditionId
     function registerToken(uint256 token, uint256 complement, bytes32 conditionId) external onlyAdmin {
         _registerToken(token, complement, conditionId);
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                        FEE MANAGEMENT
+    //////////////////////////////////////////////////////////////*/
+
+    /// @notice Allows an operator to convert accumulated outcome-token fees
+    ///         into collateral by merging matched YES/NO positions (M-05).
+    /// @dev The operator must have ERC-1155 approval for the exchange.
+    /// @param tokenId - One of the two complementary outcome token IDs
+    function sweepFees(uint256 tokenId) external nonReentrant onlyOperator {
+        uint256 complement = getComplement(tokenId);
+        bytes32 conditionId = getConditionId(tokenId);
+
+        address ctfAddr = getCtf();
+        uint256 balToken = IERC1155(ctfAddr).balanceOf(msg.sender, tokenId);
+        uint256 balComplement = IERC1155(ctfAddr).balanceOf(msg.sender, complement);
+
+        uint256 amount = balToken < balComplement ? balToken : balComplement;
+        if (amount == 0) revert NothingToSweep();
+
+        // Pull both outcome tokens from operator into the exchange
+        _transfer(msg.sender, address(this), tokenId, amount);
+        _transfer(msg.sender, address(this), complement, amount);
+
+        // Merge into collateral
+        _merge(conditionId, amount);
+
+        // Send the resulting collateral back to the operator
+        _transfer(address(this), msg.sender, 0, amount);
+
+        emit FeesSwept(msg.sender, tokenId, amount);
     }
 }
