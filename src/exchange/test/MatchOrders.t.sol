@@ -248,6 +248,7 @@ contract MatchOrdersTest is BaseExchangeTest {
         vm.assume(
             fillAmount <= makerAmount && takerFeeRateBps < exchange.getMaxFeeRate()
                 && makerFeeRateBps < exchange.getMaxFeeRate()
+                && _getTakingAmount(fillAmount, makerAmount, takerAmount) > 0 // M-04: skip zero-taking fills
         );
 
         // Init a match with a YES sell against a NO sell
@@ -782,5 +783,25 @@ contract MatchOrdersTest is BaseExchangeTest {
         vm.expectRevert(MakingGtRemaining.selector);
         vm.prank(admin);
         exchange.matchOrders(buy, makerOrders, takerOrderFillAmount, fillAmounts);
+    }
+
+    /// @notice M-04: matchOrders reverts when taker's taking amount truncates to zero
+    function testMatchOrdersRevertsOnZeroTaking() public {
+        // Taker BUY order: extreme price skew — 100M collateral for 1 outcome token
+        Order memory buy = _createAndSignOrder(bobPK, yes, 100_000_000, 1, Side.BUY);
+
+        // Maker SELL order at normal price
+        Order memory sell = _createAndSignOrder(carlaPK, yes, 100_000_000, 50_000_000, Side.SELL);
+
+        Order[] memory makerOrders = new Order[](1);
+        makerOrders[0] = sell;
+
+        uint256[] memory fillAmounts = new uint256[](1);
+        fillAmounts[0] = 100_000_000;
+
+        // takerFillAmount=1 → taking = 1 * 1 / 100_000_000 = 0
+        vm.expectRevert(RoundsToZero.selector);
+        vm.prank(admin);
+        exchange.matchOrders(buy, makerOrders, 1, fillAmounts);
     }
 }

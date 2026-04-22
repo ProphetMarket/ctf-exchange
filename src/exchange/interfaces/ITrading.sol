@@ -14,6 +14,8 @@ interface ITradingEE {
     error TooLittleTokensReceived();
     error MismatchedTokenIds();
     error InvalidAmount();
+    error RoundsToZero();
+    error NothingToSweep();
 
     /// @notice Emitted when an order is cancelled
     event OrderCancelled(bytes32 indexed orderHash);
@@ -39,6 +41,9 @@ interface ITradingEE {
         uint256 makerAmountFilled,
         uint256 takerAmountFilled
     );
+
+    /// @notice Emitted when an operator merges complementary outcome tokens into collateral
+    event FeesSwept(address indexed operator, uint256 indexed tokenId, uint256 amount);
 }
 
 interface ITrading is ITradingEE { }

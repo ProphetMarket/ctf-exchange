@@ -671,4 +671,30 @@ contract CTFExchangeTest is BaseExchangeTest {
         uint256 fee = calculateFee(feeRateBps, outcomeTokens, makerAmount, takerAmount, side);
         assertEq(fee, 0);
     }
+
+    /// @notice M-04: fillOrder with fillAmount=1 on a skewed price truncates taking to 0
+    function testFillOrderRevertsOnZeroTaking() public {
+        _mintTestTokens(bob, address(exchange), 1_000_000_000);
+
+        // BUY order: 100M collateral for 1 outcome token (extreme price skew)
+        Order memory order = _createAndSignOrder(bobPK, yes, 100_000_000, 1, Side.BUY);
+
+        // fillAmount=1 → taking = 1 * 1 / 100_000_000 = 0 (integer truncation)
+        vm.expectRevert(RoundsToZero.selector);
+        vm.prank(admin);
+        exchange.fillOrder(order, 1);
+    }
+
+    /// @notice M-04: Same skewed order succeeds when fillAmount is large enough
+    function testFillOrderSucceedsWithNonZeroTaking() public {
+        _mintTestTokens(bob, address(exchange), 1_000_000_000);
+        _mintTestTokens(admin, address(exchange), 1_000_000_000);
+
+        // BUY order: 100M collateral for 1 outcome token
+        Order memory order = _createAndSignOrder(bobPK, yes, 100_000_000, 1, Side.BUY);
+
+        // fillAmount=100_000_000 → taking = 100_000_000 * 1 / 100_000_000 = 1 (no truncation)
+        vm.prank(admin);
+        exchange.fillOrder(order, 100_000_000);
+    }
 }

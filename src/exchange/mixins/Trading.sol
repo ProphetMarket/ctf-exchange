@@ -252,6 +252,12 @@ abstract contract Trading is IFees, ITrading, IHashing, IRegistry, ISignatures, 
         // Calculate taking amount
         takingAmount = CalculatorHelper.calculateTakingAmount(making, order.makerAmount, order.takerAmount);
 
+        // Reject fills where integer division truncates taking to zero (M-04).
+        // Without this, an operator can repeatedly fill with making=1 on skewed-price
+        // orders, draining the maker one token at a time with no counter-payment.
+        // Only check when making > 0 — a zero fill is a no-op, not a truncation.
+        if (making > 0 && takingAmount == 0) revert RoundsToZero();
+
         // Update the order status in storage
         _updateOrderStatus(orderHash, order, making);
     }
