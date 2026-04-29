@@ -3,6 +3,7 @@ pragma solidity <0.9.0;
 
 import { BaseExchangeTest } from "exchange/test/BaseExchangeTest.sol";
 import { CTFExchange } from "exchange/CTFExchange.sol";
+import { PolyFactoryHelper } from "exchange/mixins/PolyFactoryHelper.sol";
 import { Order, Side, MatchType, OrderStatus, SignatureType } from "exchange/libraries/OrderStructs.sol";
 import { Vm } from "forge-std/Vm.sol";
 
@@ -749,37 +750,146 @@ contract CTFExchangeTest is BaseExchangeTest {
                     Factory setter input validation
     //////////////////////////////////////////////////////////////*/
 
-    /// @notice setProxyFactory must reject the zero address to prevent bricking
-    ///         the proxy creation flow. A zero proxy factory would cause all
-    ///         GnosisSafeProxy deployments to fail.
+    // ── Proxy Factory Timelock ────────────────────────────────────
+
+    /// @notice setProxyFactory must reject the zero address.
     function test_setProxyFactory_revertsOnZeroAddress() public {
         vm.prank(admin);
         vm.expectRevert("zero address");
         exchange.setProxyFactory(address(0));
     }
 
-    /// @notice setSafeFactory must reject the zero address for the same reason
-    ///         as setProxyFactory — a zero safe factory breaks safe creation.
+    /// @notice setProxyFactory schedules a change instead of applying immediately.
+    function test_setProxyFactory_schedulesChange() public {
+        address newFactory = address(0xBEEF);
+        vm.prank(admin);
+        exchange.setProxyFactory(newFactory);
+
+        (address pending, uint256 effectiveAt) = exchange.pendingProxyFactory();
+        assertEq(pending, newFactory);
+        assertEq(effectiveAt, block.timestamp + exchange.FACTORY_TIMELOCK());
+
+        // Factory is NOT changed yet
+        assertNotEq(exchange.getProxyFactory(), newFactory);
+    }
+
+    /// @notice applyProxyFactory applies the change after the timelock elapses.
+    function test_applyProxyFactory_worksAfterTimelock() public {
+        address newFactory = address(0xBEEF);
+        vm.prank(admin);
+        exchange.setProxyFactory(newFactory);
+
+        vm.warp(block.timestamp + exchange.FACTORY_TIMELOCK());
+        vm.prank(admin);
+        exchange.applyProxyFactory();
+
+        assertEq(exchange.getProxyFactory(), newFactory);
+
+        // Pending is cleared
+        (address pending,) = exchange.pendingProxyFactory();
+        assertEq(pending, address(0));
+    }
+
+    /// @notice applyProxyFactory reverts if the timelock hasn't elapsed.
+    function test_applyProxyFactory_revertsBeforeTimelock() public {
+        address newFactory = address(0xBEEF);
+        vm.prank(admin);
+        exchange.setProxyFactory(newFactory);
+
+        vm.warp(block.timestamp + exchange.FACTORY_TIMELOCK() - 1);
+        vm.prank(admin);
+        vm.expectRevert(PolyFactoryHelper.TimelockNotElapsed.selector);
+        exchange.applyProxyFactory();
+    }
+
+    /// @notice applyProxyFactory reverts when nothing is scheduled.
+    function test_applyProxyFactory_revertsWhenNothingScheduled() public {
+        vm.prank(admin);
+        vm.expectRevert(PolyFactoryHelper.NoFactoryChangeScheduled.selector);
+        exchange.applyProxyFactory();
+    }
+
+    /// @notice cancelProxyFactory clears the pending change.
+    function test_cancelProxyFactory_clearsPending() public {
+        address newFactory = address(0xBEEF);
+        vm.prank(admin);
+        exchange.setProxyFactory(newFactory);
+
+        vm.prank(admin);
+        exchange.cancelProxyFactory();
+
+        (address pending,) = exchange.pendingProxyFactory();
+        assertEq(pending, address(0));
+    }
+
+    // ── Safe Factory Timelock ─────────────────────────────────────
+
+    /// @notice setSafeFactory must reject the zero address.
     function test_setSafeFactory_revertsOnZeroAddress() public {
         vm.prank(admin);
         vm.expectRevert("zero address");
         exchange.setSafeFactory(address(0));
     }
 
-    /// @notice setProxyFactory accepts and stores a valid non-zero address.
-    function test_setProxyFactory_succeedsWithValidAddress() public {
-        address newFactory = address(0xBEEF);
-        vm.prank(admin);
-        exchange.setProxyFactory(newFactory);
-        assertEq(exchange.getProxyFactory(), newFactory);
-    }
-
-    /// @notice setSafeFactory accepts and stores a valid non-zero address.
-    function test_setSafeFactory_succeedsWithValidAddress() public {
+    /// @notice setSafeFactory schedules a change instead of applying immediately.
+    function test_setSafeFactory_schedulesChange() public {
         address newFactory = address(0xCAFE);
         vm.prank(admin);
         exchange.setSafeFactory(newFactory);
+
+        (address pending, uint256 effectiveAt) = exchange.pendingSafeFactory();
+        assertEq(pending, newFactory);
+        assertEq(effectiveAt, block.timestamp + exchange.FACTORY_TIMELOCK());
+
+        assertNotEq(exchange.getSafeFactory(), newFactory);
+    }
+
+    /// @notice applySafeFactory applies the change after the timelock elapses.
+    function test_applySafeFactory_worksAfterTimelock() public {
+        address newFactory = address(0xCAFE);
+        vm.prank(admin);
+        exchange.setSafeFactory(newFactory);
+
+        vm.warp(block.timestamp + exchange.FACTORY_TIMELOCK());
+        vm.prank(admin);
+        exchange.applySafeFactory();
+
         assertEq(exchange.getSafeFactory(), newFactory);
+
+        (address pending,) = exchange.pendingSafeFactory();
+        assertEq(pending, address(0));
+    }
+
+    /// @notice applySafeFactory reverts if the timelock hasn't elapsed.
+    function test_applySafeFactory_revertsBeforeTimelock() public {
+        address newFactory = address(0xCAFE);
+        vm.prank(admin);
+        exchange.setSafeFactory(newFactory);
+
+        vm.warp(block.timestamp + exchange.FACTORY_TIMELOCK() - 1);
+        vm.prank(admin);
+        vm.expectRevert(PolyFactoryHelper.TimelockNotElapsed.selector);
+        exchange.applySafeFactory();
+    }
+
+    /// @notice applySafeFactory reverts when nothing is scheduled.
+    function test_applySafeFactory_revertsWhenNothingScheduled() public {
+        vm.prank(admin);
+        vm.expectRevert(PolyFactoryHelper.NoFactoryChangeScheduled.selector);
+        exchange.applySafeFactory();
+    }
+
+    /// @notice cancelSafeFactory clears the pending change.
+    function test_cancelSafeFactory_clearsPending() public {
+        address newFactory = address(0xCAFE);
+        vm.prank(admin);
+        exchange.setSafeFactory(newFactory);
+
+        vm.prank(admin);
+        exchange.cancelSafeFactory();
+
+        (address pending,) = exchange.pendingSafeFactory();
+        assertEq(pending, address(0));
     }
 
     /*//////////////////////////////////////////////////////////////

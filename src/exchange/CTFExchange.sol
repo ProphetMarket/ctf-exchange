@@ -93,16 +93,36 @@ contract CTFExchange is
                         CONFIGURATION
     //////////////////////////////////////////////////////////////*/
 
-    /// @notice Sets a new Proxy Wallet factory for the Exchange
+    /// @notice Schedules a new Proxy Wallet factory. Takes effect after FACTORY_TIMELOCK.
     /// @param _newProxyFactory - The new Proxy Wallet factory
     function setProxyFactory(address _newProxyFactory) external onlyAdmin {
-        _setProxyFactory(_newProxyFactory);
+        _scheduleProxyFactory(_newProxyFactory);
     }
 
-    /// @notice Sets a new safe factory for the Exchange
+    /// @notice Applies a previously scheduled Proxy Wallet factory change.
+    function applyProxyFactory() external onlyAdmin {
+        _applyProxyFactory();
+    }
+
+    /// @notice Cancels a pending Proxy Wallet factory change.
+    function cancelProxyFactory() external onlyAdmin {
+        _cancelProxyFactory();
+    }
+
+    /// @notice Schedules a new Safe factory. Takes effect after FACTORY_TIMELOCK.
     /// @param _newSafeFactory  - The new Safe wallet factory
     function setSafeFactory(address _newSafeFactory) external onlyAdmin {
-        _setSafeFactory(_newSafeFactory);
+        _scheduleSafeFactory(_newSafeFactory);
+    }
+
+    /// @notice Applies a previously scheduled Safe factory change.
+    function applySafeFactory() external onlyAdmin {
+        _applySafeFactory();
+    }
+
+    /// @notice Cancels a pending Safe factory change.
+    function cancelSafeFactory() external onlyAdmin {
+        _cancelSafeFactory();
     }
 
     /// @notice Registers a tokenId, its complement and its conditionId for trading on the Exchange

@@ -18,9 +18,27 @@ abstract contract PolyFactoryHelper {
     /// @notice The Polymarket Gnosis Safe Factory Contract
     address public safeFactory;
 
-    event ProxyFactoryUpdated(address indexed oldProxyFactory, address indexed newProxyFactory);
+    /// @notice Delay before a scheduled factory change can be applied.
+    ///         Gives users time to cancel orders tied to the current factory.
+    uint256 public constant FACTORY_TIMELOCK = 48 hours;
 
+    struct PendingFactory {
+        address newAddress;
+        uint256 effectiveAt;
+    }
+
+    PendingFactory public pendingProxyFactory;
+    PendingFactory public pendingSafeFactory;
+
+    event ProxyFactoryUpdated(address indexed oldProxyFactory, address indexed newProxyFactory);
     event SafeFactoryUpdated(address indexed oldSafeFactory, address indexed newSafeFactory);
+    event ProxyFactoryChangeScheduled(address indexed newFactory, uint256 effectiveAt);
+    event SafeFactoryChangeScheduled(address indexed newFactory, uint256 effectiveAt);
+    event ProxyFactoryChangeCancelled();
+    event SafeFactoryChangeCancelled();
+
+    error NoFactoryChangeScheduled();
+    error TimelockNotElapsed();
 
     constructor(address _proxyFactory, address _safeFactory) {
         proxyFactory = _proxyFactory;
@@ -59,15 +77,49 @@ abstract contract PolyFactoryHelper {
         return PolySafeLib.getSafeAddress(_addr, getSafeFactoryImplementation(), safeFactory);
     }
 
-    function _setProxyFactory(address _proxyFactory) internal {
-        require(_proxyFactory != address(0), "zero address");
-        emit ProxyFactoryUpdated(proxyFactory, _proxyFactory);
-        proxyFactory = _proxyFactory;
+    // ── Proxy Factory Timelock ───────────────────────────────────
+
+    function _scheduleProxyFactory(address _newProxyFactory) internal {
+        require(_newProxyFactory != address(0), "zero address");
+        uint256 effectiveAt = block.timestamp + FACTORY_TIMELOCK;
+        pendingProxyFactory = PendingFactory(_newProxyFactory, effectiveAt);
+        emit ProxyFactoryChangeScheduled(_newProxyFactory, effectiveAt);
     }
 
-    function _setSafeFactory(address _safeFactory) internal {
-        require(_safeFactory != address(0), "zero address");
-        emit SafeFactoryUpdated(safeFactory, _safeFactory);
-        safeFactory = _safeFactory;
+    function _applyProxyFactory() internal {
+        PendingFactory memory pending = pendingProxyFactory;
+        if (pending.newAddress == address(0)) revert NoFactoryChangeScheduled();
+        if (block.timestamp < pending.effectiveAt) revert TimelockNotElapsed();
+        emit ProxyFactoryUpdated(proxyFactory, pending.newAddress);
+        proxyFactory = pending.newAddress;
+        delete pendingProxyFactory;
+    }
+
+    function _cancelProxyFactory() internal {
+        delete pendingProxyFactory;
+        emit ProxyFactoryChangeCancelled();
+    }
+
+    // ── Safe Factory Timelock ────────────────────────────────────
+
+    function _scheduleSafeFactory(address _newSafeFactory) internal {
+        require(_newSafeFactory != address(0), "zero address");
+        uint256 effectiveAt = block.timestamp + FACTORY_TIMELOCK;
+        pendingSafeFactory = PendingFactory(_newSafeFactory, effectiveAt);
+        emit SafeFactoryChangeScheduled(_newSafeFactory, effectiveAt);
+    }
+
+    function _applySafeFactory() internal {
+        PendingFactory memory pending = pendingSafeFactory;
+        if (pending.newAddress == address(0)) revert NoFactoryChangeScheduled();
+        if (block.timestamp < pending.effectiveAt) revert TimelockNotElapsed();
+        emit SafeFactoryUpdated(safeFactory, pending.newAddress);
+        safeFactory = pending.newAddress;
+        delete pendingSafeFactory;
+    }
+
+    function _cancelSafeFactory() internal {
+        delete pendingSafeFactory;
+        emit SafeFactoryChangeCancelled();
     }
 }
