@@ -3,6 +3,7 @@ pragma solidity <0.9.0;
 
 import { BaseExchangeTest } from "exchange/test/BaseExchangeTest.sol";
 import { Order, Side, MatchType, OrderStatus, SignatureType } from "exchange/libraries/OrderStructs.sol";
+import { Vm } from "forge-std/Vm.sol";
 
 contract CTFExchangeTest is BaseExchangeTest {
     function testSetup() public {
@@ -306,6 +307,49 @@ contract CTFExchangeTest is BaseExchangeTest {
         OrderStatus memory status = exchange.getOrderStatus(orderHash);
         assertEq(status.remaining, 25_000_000);
         assertFalse(status.isFilledOrCancelled);
+    }
+
+    /// @notice Q-01: fillOrder with non-zero feeRateBps must emit FeeCharged
+    function test_fillOrder_emitsFeeCharged() public {
+        _mintTestTokens(bob, address(exchange), 20_000_000_000);
+        _mintTestTokens(carla, address(exchange), 20_000_000_000);
+
+        Order memory order = _createAndSignOrderWithFee(
+            bobPK,
+            yes,
+            50_000_000,
+            100_000_000,
+            100, // 1% or 100 bips
+            Side.BUY
+        );
+
+        uint256 expectedFee = calculateFee(100, 50_000_000, order.makerAmount, order.takerAmount, order.side);
+
+        vm.expectEmit(true, true, true, true);
+        emit FeeCharged(carla, yes, expectedFee);
+
+        vm.prank(carla);
+        exchange.fillOrder(order, 25_000_000);
+    }
+
+    /// @notice Q-01: fillOrder with feeRateBps == 0 must NOT emit FeeCharged
+    function test_fillOrder_noFeeChargedWhenZeroBps() public {
+        _mintTestTokens(bob, address(exchange), 20_000_000_000);
+        _mintTestTokens(carla, address(exchange), 20_000_000_000);
+
+        // Zero fee order
+        Order memory order = _createAndSignOrder(bobPK, yes, 50_000_000, 100_000_000, Side.BUY);
+
+        vm.recordLogs();
+
+        vm.prank(carla);
+        exchange.fillOrder(order, 25_000_000);
+
+        Vm.Log[] memory logs = vm.getRecordedLogs();
+        bytes32 feeChargedSig = keccak256("FeeCharged(address,uint256,uint256)");
+        for (uint256 i = 0; i < logs.length; i++) {
+            assertTrue(logs[i].topics[0] != feeChargedSig, "FeeCharged should not be emitted with zero fee");
+        }
     }
 
     function testFuzzFillOrderWithFees(uint128 fillAmount, uint16 feeRateBps) public {

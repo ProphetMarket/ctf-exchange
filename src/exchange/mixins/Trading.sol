@@ -109,6 +109,10 @@ abstract contract Trading is IFees, ITrading, IHashing, IRegistry, ISignatures, 
         // NOTE: Fees are "collected" by the Operator implicitly,
         // since the fee is deducted from the assets paid by the Operator
 
+        if (fee > 0) {
+            emit FeeCharged(msg.sender, takerAssetId, fee);
+        }
+
         emit OrderFilled(orderHash, order.maker, msg.sender, makerAssetId, takerAssetId, making, taking, fee);
     }
 
