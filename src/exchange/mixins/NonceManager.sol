@@ -2,11 +2,12 @@
 pragma solidity <0.9.0;
 
 import { INonceManager } from "../interfaces/INonceManager.sol";
+import { ReentrancyGuard } from "common/ReentrancyGuard.sol";
 
-abstract contract NonceManager is INonceManager {
+abstract contract NonceManager is INonceManager, ReentrancyGuard {
     mapping(address => uint256) public nonces;
 
-    function incrementNonce() external override {
+    function incrementNonce() external nonReentrant override {
         updateNonce(1);
     }
 

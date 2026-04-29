@@ -2,6 +2,7 @@
 pragma solidity <0.9.0;
 
 import { BaseExchangeTest } from "exchange/test/BaseExchangeTest.sol";
+import { CTFExchange } from "exchange/CTFExchange.sol";
 import { Order, Side, MatchType, OrderStatus, SignatureType } from "exchange/libraries/OrderStructs.sol";
 import { Vm } from "forge-std/Vm.sol";
 
@@ -309,7 +310,8 @@ contract CTFExchangeTest is BaseExchangeTest {
         assertFalse(status.isFilledOrCancelled);
     }
 
-    /// @notice Q-01: fillOrder with non-zero feeRateBps must emit FeeCharged
+    /// @notice fillOrder with non-zero feeRateBps must emit FeeCharged so off-chain
+    ///         accounting tools see fee revenue from direct fills, not just matchOrders.
     function test_fillOrder_emitsFeeCharged() public {
         _mintTestTokens(bob, address(exchange), 20_000_000_000);
         _mintTestTokens(carla, address(exchange), 20_000_000_000);
@@ -332,7 +334,8 @@ contract CTFExchangeTest is BaseExchangeTest {
         exchange.fillOrder(order, 25_000_000);
     }
 
-    /// @notice Q-01: fillOrder with feeRateBps == 0 must NOT emit FeeCharged
+    /// @notice fillOrder with feeRateBps == 0 must NOT emit FeeCharged — zero-fee
+    ///         fills should not produce spurious fee events.
     function test_fillOrder_noFeeChargedWhenZeroBps() public {
         _mintTestTokens(bob, address(exchange), 20_000_000_000);
         _mintTestTokens(carla, address(exchange), 20_000_000_000);
@@ -870,5 +873,192 @@ contract CTFExchangeTest is BaseExchangeTest {
         bytes32 ds1 = exchange.domainSeparator();
         bytes32 ds2 = exchange.domainSeparator();
         assertEq(ds1, ds2, "domainSeparator should be stable for same chain");
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                    Reentrancy guards on cancelOrder / incrementNonce
+    //////////////////////////////////////////////////////////////*/
+
+    /// @notice A malicious ERC1155 maker that reenters cancelOrder via onERC1155Received
+    ///         during matchOrders must be blocked by the reentrancy guard. Without this,
+    ///         the attacker could cancel later-batch orders mid-fill, reverting the entire
+    ///         matchOrders call and griefing honest makers.
+    function test_cancelOrder_revertsOnReentrancy() public {
+        // Deploy attacker that will try to cancelOrder in onERC1155Received
+        ReentrantCancelAttacker attacker = new ReentrantCancelAttacker(exchange);
+
+        // Register attacker as operator so it can be a maker
+        vm.prank(admin);
+        exchange.addOperator(address(attacker));
+
+        // Mint tokens for attacker and carla
+        _mintTestTokens(address(attacker), address(exchange), 20_000_000_000);
+        _mintTestTokens(carla, address(exchange), 20_000_000_000);
+
+        // Attacker creates a BUY order — sends collateral (ERC20, no callback) and
+        // receives CTF tokens (ERC1155, triggers onERC1155Received on attacker).
+        // Uses POLY_1271 so the exchange calls isValidSignature on the attacker contract.
+        Order memory victimOrder = _createOrder(address(attacker), yes, 100_000_000, 50_000_000, Side.BUY);
+        victimOrder.salt = 99;
+        victimOrder.signatureType = SignatureType.POLY_1271;
+
+        // Second order the attacker will try to cancel during callback
+        Order memory attackerOrder = _createOrder(address(attacker), yes, 100_000_000, 50_000_000, Side.BUY);
+        attackerOrder.salt = 100;
+        attackerOrder.signatureType = SignatureType.POLY_1271;
+
+        // Tell attacker to cancel the second order when it receives tokens
+        attacker.setOrderToCancel(attackerOrder);
+
+        // Carla is the taker (SELL side — sends CTF tokens, receives collateral)
+        Order memory takerOrder = _createAndSignOrder(carlaPK, yes, 50_000_000, 100_000_000, Side.SELL);
+
+        Order[] memory makerOrders = new Order[](1);
+        makerOrders[0] = victimOrder;
+        uint256[] memory makerFillAmounts = new uint256[](1);
+        makerFillAmounts[0] = 100_000_000;
+
+        // matchOrders triggers CTF token transfer to attacker, which reenters cancelOrder
+        vm.prank(admin);
+        vm.expectRevert("REENTRANCY");
+        exchange.matchOrders(takerOrder, makerOrders, 50_000_000, makerFillAmounts);
+    }
+
+    /// @notice A malicious ERC1155 maker that reenters incrementNonce via onERC1155Received
+    ///         during matchOrders must be blocked by the reentrancy guard. Incrementing the
+    ///         nonce mid-fill would invalidate all pending orders for that maker, griefing
+    ///         the operator batch.
+    function test_incrementNonce_revertsOnReentrancy() public {
+        ReentrantNonceAttacker attacker = new ReentrantNonceAttacker(exchange);
+
+        vm.prank(admin);
+        exchange.addOperator(address(attacker));
+
+        _mintTestTokens(address(attacker), address(exchange), 20_000_000_000);
+        _mintTestTokens(carla, address(exchange), 20_000_000_000);
+
+        // BUY order so attacker receives CTF tokens (ERC1155 callback fires)
+        Order memory makerOrder = _createOrder(address(attacker), yes, 100_000_000, 50_000_000, Side.BUY);
+        makerOrder.signatureType = SignatureType.POLY_1271;
+        attacker.setAttackEnabled(true);
+
+        Order memory takerOrder = _createAndSignOrder(carlaPK, yes, 50_000_000, 100_000_000, Side.SELL);
+
+        Order[] memory makerOrders = new Order[](1);
+        makerOrders[0] = makerOrder;
+        uint256[] memory makerFillAmounts = new uint256[](1);
+        makerFillAmounts[0] = 100_000_000;
+
+        vm.prank(admin);
+        vm.expectRevert("REENTRANCY");
+        exchange.matchOrders(takerOrder, makerOrders, 50_000_000, makerFillAmounts);
+    }
+
+    /// @notice cancelOrder must still succeed when called normally (not during a reentrant context).
+    function test_cancelOrder_succeedsNormally() public {
+        _mintTestTokens(bob, address(exchange), 20_000_000_000);
+
+        Order memory order = _createAndSignOrder(bobPK, yes, 50_000_000, 100_000_000, Side.BUY);
+        bytes32 orderHash = exchange.hashOrder(order);
+
+        vm.prank(bob);
+        exchange.cancelOrder(order);
+
+        OrderStatus memory status = exchange.getOrderStatus(orderHash);
+        assertTrue(status.isFilledOrCancelled);
+    }
+
+    /// @notice incrementNonce must still succeed when called normally (not during a reentrant context).
+    function test_incrementNonce_succeedsNormally() public {
+        assertEq(exchange.nonces(bob), 0);
+
+        vm.prank(bob);
+        exchange.incrementNonce();
+
+        assertEq(exchange.nonces(bob), 1);
+    }
+}
+
+/// @notice Malicious ERC1155 receiver that tries to cancel an order during matchOrders.
+///         Implements ERC-1271 so the exchange accepts orders where this contract is the maker.
+contract ReentrantCancelAttacker {
+    bytes4 internal constant MAGIC_VALUE_1271 = 0x1626ba7e;
+
+    CTFExchange public exchange;
+    Order public orderToCancel;
+    bool public hasOrderToCancel;
+
+    constructor(CTFExchange _exchange) {
+        exchange = _exchange;
+    }
+
+    function setOrderToCancel(Order memory order) external {
+        orderToCancel = order;
+        hasOrderToCancel = true;
+    }
+
+    function isValidSignature(bytes32, bytes memory) external pure returns (bytes4) {
+        return MAGIC_VALUE_1271;
+    }
+
+    function onERC1155Received(address, address, uint256, uint256, bytes calldata) external returns (bytes4) {
+        if (hasOrderToCancel) {
+            hasOrderToCancel = false;
+            exchange.cancelOrder(orderToCancel);
+        }
+        return this.onERC1155Received.selector;
+    }
+
+    function onERC1155BatchReceived(address, address, uint256[] calldata, uint256[] calldata, bytes calldata)
+        external
+        pure
+        returns (bytes4)
+    {
+        return this.onERC1155BatchReceived.selector;
+    }
+
+    function supportsInterface(bytes4) external pure returns (bool) {
+        return true;
+    }
+}
+
+/// @notice Malicious ERC1155 receiver that tries to increment nonce during matchOrders.
+///         Implements ERC-1271 so the exchange accepts orders where this contract is the maker.
+contract ReentrantNonceAttacker {
+    bytes4 internal constant MAGIC_VALUE_1271 = 0x1626ba7e;
+
+    CTFExchange public exchange;
+    bool public attackEnabled;
+
+    constructor(CTFExchange _exchange) {
+        exchange = _exchange;
+    }
+
+    function setAttackEnabled(bool enabled) external {
+        attackEnabled = enabled;
+    }
+
+    function isValidSignature(bytes32, bytes memory) external pure returns (bytes4) {
+        return MAGIC_VALUE_1271;
+    }
+
+    function onERC1155Received(address, address, uint256, uint256, bytes calldata) external returns (bytes4) {
+        if (attackEnabled) {
+            attackEnabled = false;
+            exchange.incrementNonce();
+        }
+        return this.onERC1155Received.selector;
+    }
+
+    function onERC1155BatchReceived(address, address, uint256[] calldata, uint256[] calldata, bytes calldata)
+        external
+        pure
+        returns (bytes4)
+    {
+        return this.onERC1155BatchReceived.selector;
+    }
+
+    function supportsInterface(bytes4) external pure returns (bool) {
+        return true;
     }
 }

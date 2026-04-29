@@ -9,12 +9,14 @@ import { ISignatures } from "../interfaces/ISignatures.sol";
 import { INonceManager } from "../interfaces/INonceManager.sol";
 import { IAssetOperations } from "../interfaces/IAssetOperations.sol";
 
+import { ReentrancyGuard } from "common/ReentrancyGuard.sol";
+
 import { CalculatorHelper } from "../libraries/CalculatorHelper.sol";
 import { Order, Side, MatchType, OrderStatus } from "../libraries/OrderStructs.sol";
 
 /// @title Trading
 /// @notice Implements logic for trading CTF assets
-abstract contract Trading is IFees, ITrading, IHashing, IRegistry, ISignatures, INonceManager, IAssetOperations {
+abstract contract Trading is IFees, ITrading, IHashing, IRegistry, ISignatures, INonceManager, IAssetOperations, ReentrancyGuard {
     /// @notice Mapping of orders to their current status
     mapping(bytes32 => OrderStatus) public orderStatus;
 
@@ -34,13 +36,13 @@ abstract contract Trading is IFees, ITrading, IHashing, IRegistry, ISignatures, 
     /// @notice Cancels an order
     /// An order can only be cancelled by its maker, the address which holds funds for the order
     /// @notice order - The order to be cancelled
-    function cancelOrder(Order memory order) external {
+    function cancelOrder(Order memory order) external nonReentrant {
         _cancelOrder(order);
     }
 
     /// @notice Cancels a set of orders
     /// @notice orders - The set of orders to be cancelled
-    function cancelOrders(Order[] memory orders) external {
+    function cancelOrders(Order[] memory orders) external nonReentrant {
         uint256 length = orders.length;
         uint256 i = 0;
         for (; i < length;) {
