@@ -6,12 +6,72 @@ import { CTFExchange } from "exchange/CTFExchange.sol";
 import { Order, Side } from "exchange/libraries/OrderStructs.sol";
 
 /// @title AuditFixesTest
-/// @notice Tests for M-09, L-02, L-03, L-05 audit findings
+/// @notice Tests for R-02, M-09, L-02, L-03, L-05 audit findings
 contract AuditFixesTest is BaseExchangeTest {
     function setUp() public override {
         super.setUp();
         _mintTestTokens(bob, address(exchange), 20_000_000_000);
         _mintTestTokens(carla, address(exchange), 20_000_000_000);
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                    R-02: acceptAdmin() inflates adminCount for existing admins
+    //////////////////////////////////////////////////////////////*/
+
+    function test_transferAdmin_revertsWhenTargetIsSelf() public {
+        vm.prank(admin);
+        vm.expectRevert(AlreadyAdmin.selector);
+        exchange.transferAdmin(admin);
+    }
+
+    function test_transferAdmin_revertsWhenTargetIsExistingAdmin() public {
+        // Add henry as a second admin
+        vm.prank(admin);
+        exchange.addAdmin(henry);
+
+        // Now try to transfer to henry (already an admin)
+        vm.prank(admin);
+        vm.expectRevert(AlreadyAdmin.selector);
+        exchange.transferAdmin(henry);
+    }
+
+    function test_acceptAdmin_revertsWhenCallerIsAlreadyAdmin() public {
+        // Add henry as admin first
+        vm.prank(admin);
+        exchange.addAdmin(henry);
+        uint256 countBefore = exchange.adminCount();
+
+        // Somehow pendingAdmin is set to henry (defense-in-depth test)
+        // We simulate by having a non-admin address proposed, then adding them as admin
+        // before they accept. Use brian instead.
+        vm.prank(admin);
+        exchange.transferAdmin(brian);
+
+        // Add brian as admin before he accepts
+        vm.prank(admin);
+        exchange.addAdmin(brian);
+
+        // Brian tries to accept — should revert since he's already an admin
+        vm.prank(brian);
+        vm.expectRevert(AlreadyAdmin.selector);
+        exchange.acceptAdmin();
+
+        // adminCount should not have changed
+        // brian was added via addAdmin (+1), so countBefore+1
+        assertEq(exchange.adminCount(), countBefore + 1);
+    }
+
+    function test_transferAdmin_succeedsForNonAdminTarget() public {
+        uint256 countBefore = exchange.adminCount();
+
+        vm.prank(admin);
+        exchange.transferAdmin(henry);
+
+        vm.prank(henry);
+        exchange.acceptAdmin();
+
+        assertTrue(exchange.isAdmin(henry));
+        assertEq(exchange.adminCount(), countBefore + 1);
     }
 
     /*//////////////////////////////////////////////////////////////

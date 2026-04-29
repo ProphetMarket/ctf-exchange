@@ -7,6 +7,7 @@ interface IAuthEE {
     error CannotRemoveLastAdmin();
     error NotPendingAdmin();
     error ZeroAddress();
+    error AlreadyAdmin();
 
     /// @notice Emitted when a new admin is added
     event NewAdmin(address indexed newAdminAddress, address indexed admin);

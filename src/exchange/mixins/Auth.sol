@@ -102,6 +102,7 @@ abstract contract Auth is IAuth {
     /// @param newAdmin - The address to propose as admin
     function transferAdmin(address newAdmin) external onlyAdmin {
         if (newAdmin == address(0)) revert ZeroAddress();
+        if (admins[newAdmin] == 1) revert AlreadyAdmin();
         pendingAdmin = newAdmin;
         emit AdminTransferProposed(msg.sender, newAdmin);
     }
@@ -109,6 +110,7 @@ abstract contract Auth is IAuth {
     /// @notice Accepts a pending admin role proposed via transferAdmin
     function acceptAdmin() external {
         if (msg.sender != pendingAdmin) revert NotPendingAdmin();
+        if (admins[msg.sender] == 1) revert AlreadyAdmin();
         admins[msg.sender] = 1;
         adminCount++;
         pendingAdmin = address(0);
