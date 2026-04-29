@@ -697,4 +697,134 @@ contract CTFExchangeTest is BaseExchangeTest {
         vm.prank(admin);
         exchange.fillOrder(order, 100_000_000);
     }
+
+    /*//////////////////////////////////////////////////////////////
+                    Factory setter input validation
+    //////////////////////////////////////////////////////////////*/
+
+    /// @notice setProxyFactory must reject the zero address to prevent bricking
+    ///         the proxy creation flow. A zero proxy factory would cause all
+    ///         GnosisSafeProxy deployments to fail.
+    function test_setProxyFactory_revertsOnZeroAddress() public {
+        vm.prank(admin);
+        vm.expectRevert("zero address");
+        exchange.setProxyFactory(address(0));
+    }
+
+    /// @notice setSafeFactory must reject the zero address for the same reason
+    ///         as setProxyFactory — a zero safe factory breaks safe creation.
+    function test_setSafeFactory_revertsOnZeroAddress() public {
+        vm.prank(admin);
+        vm.expectRevert("zero address");
+        exchange.setSafeFactory(address(0));
+    }
+
+    /// @notice setProxyFactory accepts and stores a valid non-zero address.
+    function test_setProxyFactory_succeedsWithValidAddress() public {
+        address newFactory = address(0xBEEF);
+        vm.prank(admin);
+        exchange.setProxyFactory(newFactory);
+        assertEq(exchange.getProxyFactory(), newFactory);
+    }
+
+    /// @notice setSafeFactory accepts and stores a valid non-zero address.
+    function test_setSafeFactory_succeedsWithValidAddress() public {
+        address newFactory = address(0xCAFE);
+        vm.prank(admin);
+        exchange.setSafeFactory(newFactory);
+        assertEq(exchange.getSafeFactory(), newFactory);
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                    Batch fill input validation
+    //////////////////////////////////////////////////////////////*/
+
+    /// @notice fillOrders must reject mismatched array lengths. Without this check,
+    ///         the loop would either read out-of-bounds or silently skip orders,
+    ///         leading to partial fills that look successful.
+    function test_fillOrders_revertsOnLengthMismatch() public {
+        _mintTestTokens(bob, address(exchange), 20_000_000_000);
+        _mintTestTokens(carla, address(exchange), 20_000_000_000);
+
+        Order[] memory orders = new Order[](2);
+        orders[0] = _createAndSignOrder(bobPK, yes, 50_000_000, 100_000_000, Side.BUY);
+        orders[1] = _createAndSignOrder(bobPK, no, 50_000_000, 100_000_000, Side.BUY);
+
+        // Only 1 fill amount for 2 orders
+        uint256[] memory fillAmounts = new uint256[](1);
+        fillAmounts[0] = 50_000_000;
+
+        vm.prank(admin);
+        vm.expectRevert(ArrayLengthMismatch.selector);
+        exchange.fillOrders(orders, fillAmounts);
+    }
+
+    /// @notice fillOrders succeeds when orders and fillAmounts arrays have matching lengths.
+    function test_fillOrders_succeedsWithMatchingLengths() public {
+        _mintTestTokens(bob, address(exchange), 20_000_000_000);
+        _mintTestTokens(carla, address(exchange), 20_000_000_000);
+        _mintTestTokens(admin, address(exchange), 20_000_000_000);
+
+        Order[] memory orders = new Order[](1);
+        orders[0] = _createAndSignOrder(bobPK, yes, 50_000_000, 100_000_000, Side.BUY);
+
+        uint256[] memory fillAmounts = new uint256[](1);
+        fillAmounts[0] = 50_000_000;
+
+        vm.prank(admin);
+        exchange.fillOrders(orders, fillAmounts);
+    }
+
+    /// @notice matchOrders must reject mismatched makerOrders and makerFillAmounts lengths.
+    ///         Same rationale as fillOrders — prevents silent partial matching.
+    function test_matchOrders_revertsOnMakerArrayLengthMismatch() public {
+        _mintTestTokens(bob, address(exchange), 20_000_000_000);
+        _mintTestTokens(carla, address(exchange), 20_000_000_000);
+
+        Order memory takerOrder = _createAndSignOrder(bobPK, yes, 50_000_000, 100_000_000, Side.BUY);
+
+        Order[] memory makerOrders = new Order[](2);
+        makerOrders[0] = _createAndSignOrder(carlaPK, yes, 100_000_000, 50_000_000, Side.SELL);
+        makerOrders[1] = _createAndSignOrder(carlaPK, yes, 100_000_000, 50_000_000, Side.SELL);
+
+        // Only 1 fill amount for 2 maker orders
+        uint256[] memory makerFillAmounts = new uint256[](1);
+        makerFillAmounts[0] = 50_000_000;
+
+        vm.prank(admin);
+        vm.expectRevert(ArrayLengthMismatch.selector);
+        exchange.matchOrders(takerOrder, makerOrders, 50_000_000, makerFillAmounts);
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                    EIP-712 domain separator
+    //////////////////////////////////////////////////////////////*/
+
+    /// @notice The domainSeparator getter must return a non-zero value. A zero value
+    ///         would mean EIP-712 signatures are not properly initialized.
+    function test_domainSeparator_returnsNonZero() public {
+        bytes32 ds = exchange.domainSeparator();
+        assertTrue(ds != bytes32(0), "domainSeparator should not be zero");
+    }
+
+    /// @notice After a chain fork (different chain ID), the domain separator must
+    ///         recompute to prevent cross-chain signature replay. Orders signed on
+    ///         the original chain must not be valid on the fork.
+    function test_domainSeparator_recomputesOnChainFork() public {
+        bytes32 dsBefore = exchange.domainSeparator();
+
+        // Simulate a chain fork by changing the chain ID
+        vm.chainId(999);
+
+        bytes32 dsAfter = exchange.domainSeparator();
+        assertTrue(dsBefore != dsAfter, "domainSeparator should change on chain fork");
+    }
+
+    /// @notice On the same chain, consecutive calls must return the same value.
+    ///         A non-deterministic separator would break signature verification.
+    function test_domainSeparator_stableOnSameChain() public {
+        bytes32 ds1 = exchange.domainSeparator();
+        bytes32 ds2 = exchange.domainSeparator();
+        assertEq(ds1, ds2, "domainSeparator should be stable for same chain");
+    }
 }
