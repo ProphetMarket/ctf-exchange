@@ -28,6 +28,42 @@ contract AuthTest is BaseExchangeTest {
         vm.stopPrank();
     }
 
+    /// @notice addAdmin must reject the zero address. Without this guard, an admin
+    ///         could call addAdmin(address(0)) to inflate adminCount and then renounce
+    ///         themselves, leaving address(0) as the only "counted" admin and
+    ///         permanently bricking every onlyAdmin function.
+    function test_addAdmin_revertsOnZeroAddress() public {
+        uint256 countBefore = exchange.adminCount();
+
+        vm.prank(admin);
+        vm.expectRevert(ZeroAddress.selector);
+        exchange.addAdmin(address(0));
+
+        assertEq(exchange.adminCount(), countBefore);
+        assertFalse(exchange.isAdmin(address(0)));
+    }
+
+    /// @notice End-to-end check that the bricking attack is closed: the zero-address
+    ///         guard on addAdmin prevents inflation, so the last-admin guard on
+    ///         renounceAdminRole still holds even if an admin tries to escape it.
+    function test_addAdmin_zeroAddress_doesNotEnableBricking() public {
+        assertEq(exchange.adminCount(), 1);
+
+        // Attempt to inflate adminCount via the zero address — must revert.
+        vm.prank(admin);
+        vm.expectRevert(ZeroAddress.selector);
+        exchange.addAdmin(address(0));
+
+        // adminCount is unchanged, so renounceAdminRole is still blocked by the
+        // last-admin guard. The contract cannot be left without a real admin.
+        vm.prank(admin);
+        vm.expectRevert(CannotRemoveLastAdmin.selector);
+        exchange.renounceAdminRole();
+
+        assertTrue(exchange.isAdmin(admin));
+        assertEq(exchange.adminCount(), 1);
+    }
+
     function test_removeAdmin_decrementsCount() public {
         vm.startPrank(admin);
         exchange.addAdmin(henry);

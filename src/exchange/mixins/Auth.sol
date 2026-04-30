@@ -46,6 +46,7 @@ abstract contract Auth is IAuth {
     /// Can only be called by a current admin
     /// @param admin_ - The new admin
     function addAdmin(address admin_) external onlyAdmin {
+        if (admin_ == address(0)) revert ZeroAddress();
         if (admins[admin_] != 1) {
             admins[admin_] = 1;
             adminCount++;
